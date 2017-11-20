@@ -71,7 +71,7 @@ int main(int argc, char* argv[])		//main takes command line arguments
 	DH *dh;
 	unsigned char* binconvert;
 	map<int, BIGNUM*> pubKeys;
-	BIGNUM * num;
+
 
 	dh =  DH_generate_parameters(256, 2, NULL, NULL);    //generates prime p & g = 2 
 	int codes;
@@ -176,10 +176,9 @@ int main(int argc, char* argv[])		//main takes command line arguments
 				cout << "admin: connect from '" << server->h_name << "'" << " at '" << ntohs(serv_addr.sin_port) << "'\n";
 				
 
-				int i = 0;
 				char * check;
 
-				for (; i < MAX_CLIENTS; ++i)
+				for (int i = 0; i < MAX_CLIENTS; ++i)
 				{
 					if (clsock[i] == 0)	//available position in list 'not used'
 					{
@@ -233,71 +232,6 @@ int main(int argc, char* argv[])		//main takes command line arguments
 						break;
 					}
 				}
-				
-				/*
-				num = BN_new();
-				read(sd, &len, sizeof(len));
-				binconvert = (unsigned char*) malloc(len);
-				if (value = read(clsock[i], binconvert, len) <= 0)
-				  {
-				    cerr <<"ERROR: failed to read pubkey from client"<<endl;
-				    
-				  } 
-
-				
-				BN_bin2bn(binconvert, len, num);
-				pubKeys[clsock[i] ] = num;
-				check = BN_bn2dec(pubKeys[clsock[i] ]);
-				cout<<"pub key "<<check<<endl;
-				
-				if ( pubKeys.size() > 1){
-				  
-				  for (int j = 0; j < MAX_CLIENTS; ++j)
-				    {
-				      if ( i != j && clsock[j] != 0 && j > 3) 
-					{
-					  len = BN_num_bytes(pubKeys[clsock[i] ]);
-					  binconvert = (unsigned char*) malloc(len);
-					  len = BN_bn2bin(pubKeys[clsock[i] ], binconvert);
-						check = BN_bn2dec(pubKeys[clsock[i] ]);
-						cout << "pubkey= "<<check<<endl;
-						if (send(clsock[j], &len, sizeof(len), MSG_NOSIGNAL) < 0)
-						{
-								close(clsock[j]);  //close socket if send fails
-								clsock[j] = 0;	   //reset position to 0 								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
-					
-
-
-//and the generator to the new client
-						if (send(clsock[j], binconvert, len, MSG_NOSIGNAL) < 0)
-						   {
-								close(clsock[j]);  //close socket if send fails
-								clsock[j] = 0;	   //reset position to 0 
-								FD_CLR(clsock[j], &masterfds); //clr from set
-						     }
-					 
-						
-					  len = BN_num_bytes(pubKeys[clsock[j] ]);
-					  binconvert = (unsigned char*) malloc(len);
-					  len = BN_bn2bin(pubKeys[clsock[j] ], binconvert);
-						check = BN_bn2dec(pubKeys[clsock[j] ]);
-						cout << "pubkey= "<<check<<endl;
-						if (send(clsock[i], &len, sizeof(len), MSG_NOSIGNAL) < 0)
-						{
-								close(clsock[i]);  //close socket if send fails
-								clsock[i] = 0;	   //reset position to 0 								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
-					
-
-
-//and the generator to the new client
-						if (send(clsock[i], binconvert, len, MSG_NOSIGNAL) < 0)
-						   {
-								close(clsock[i]);  //close socket if send fails
-								clsock[i] = 0;	   //reset position to 0 
-								FD_CLR(clsock[i], &masterfds); //clr from set
-								} */
 			}
 		
 				  
