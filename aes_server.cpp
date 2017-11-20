@@ -14,6 +14,7 @@
 #include <iostream>						//standard input/output stream objects
 #include <cstdlib>						//C standard general utilities library
 #include <cstring>						//C string class for string objects
+#include <map>
 #include <netdb.h>						//IP address and port # structures	
 #include <unistd.h>						//Read and Close functions
 #include <sys/types.h> 					//for porting socket programs
@@ -69,8 +70,19 @@ int main(int argc, char* argv[])		//main takes command line arguments
 	struct hostent *server;				//ptr to structure that defines a host computer
 	DH *dh;
 	unsigned char* binconvert;
+	map<int, BIGNUM*> pubKeys;
+	BIGNUM * num;
+
 	dh =  DH_generate_parameters(256, 2, NULL, NULL);    //generates prime p & g = 2 
-	
+	int codes;
+	if(1 != DH_check(dh, &codes)) perror("something bad happened");
+	if(codes != 0)
+	  {
+	    /* Problems have been found with the generated parameters */
+	    /* Handle these here - we'll just abort for this example */
+	    printf("DH_check failed\n");
+	    abort();
+	  }
 
 	FD_ZERO(&masterfds);				//zero/clear the master set
 	//Socket is set up and bound and waiting for connections
@@ -163,7 +175,11 @@ int main(int argc, char* argv[])		//main takes command line arguments
 				
 				cout << "admin: connect from '" << server->h_name << "'" << " at '" << ntohs(serv_addr.sin_port) << "'\n";
 				
-				for (int i = 0; i < MAX_CLIENTS; ++i)
+
+				int i = 0;
+				char * check;
+
+				for (; i < MAX_CLIENTS; ++i)
 				{
 					if (clsock[i] == 0)	//available position in list 'not used'
 					{
@@ -174,7 +190,7 @@ int main(int argc, char* argv[])		//main takes command line arguments
 						len = BN_num_bytes(dh->p);
 						binconvert = (unsigned char*) malloc(len);
 						len = BN_bn2bin(dh->p, binconvert);
-						char * check = BN_bn2dec(dh->p);
+						check = BN_bn2dec(dh->p);
 						cout << "p= "<<check<<endl;
 						if (send(clsock[i], &len, sizeof(len), MSG_NOSIGNAL) < 0)
 						{
@@ -198,8 +214,79 @@ int main(int argc, char* argv[])		//main takes command line arguments
 						if (send(clsock[i], &len, sizeof(len), MSG_NOSIGNAL) < 0)
 						{
 								close(clsock[i]);  //close socket if send fails
+								clsock[i] = 0;	   //reset position to 0      
+								FD_CLR(clsock[i], &masterfds); //clr from set
+						     }
+						
+						//and the generator to the new client
+					
+						if (send(clsock[i], binconvert, len, MSG_NOSIGNAL) < 0)
+						   {
+								close(clsock[i]);  //close socket if send fails
 								clsock[i] = 0;	   //reset position to 0 
 								FD_CLR(clsock[i], &masterfds); //clr from set
+						     }
+					    	 //finished sending g
+									
+	
+						cout << "\nSuccessfully added new socket to list\n";
+						break;
+					}
+				}
+				
+				/*
+				num = BN_new();
+				read(sd, &len, sizeof(len));
+				binconvert = (unsigned char*) malloc(len);
+				if (value = read(clsock[i], binconvert, len) <= 0)
+				  {
+				    cerr <<"ERROR: failed to read pubkey from client"<<endl;
+				    
+				  } 
+
+				
+				BN_bin2bn(binconvert, len, num);
+				pubKeys[clsock[i] ] = num;
+				check = BN_bn2dec(pubKeys[clsock[i] ]);
+				cout<<"pub key "<<check<<endl;
+				
+				if ( pubKeys.size() > 1){
+				  
+				  for (int j = 0; j < MAX_CLIENTS; ++j)
+				    {
+				      if ( i != j && clsock[j] != 0 && j > 3) 
+					{
+					  len = BN_num_bytes(pubKeys[clsock[i] ]);
+					  binconvert = (unsigned char*) malloc(len);
+					  len = BN_bn2bin(pubKeys[clsock[i] ], binconvert);
+						check = BN_bn2dec(pubKeys[clsock[i] ]);
+						cout << "pubkey= "<<check<<endl;
+						if (send(clsock[j], &len, sizeof(len), MSG_NOSIGNAL) < 0)
+						{
+								close(clsock[j]);  //close socket if send fails
+								clsock[j] = 0;	   //reset position to 0 								FD_CLR(clsock[i], &masterfds); //clr from set
+						     }
+					
+
+
+//and the generator to the new client
+						if (send(clsock[j], binconvert, len, MSG_NOSIGNAL) < 0)
+						   {
+								close(clsock[j]);  //close socket if send fails
+								clsock[j] = 0;	   //reset position to 0 
+								FD_CLR(clsock[j], &masterfds); //clr from set
+						     }
+					 
+						
+					  len = BN_num_bytes(pubKeys[clsock[j] ]);
+					  binconvert = (unsigned char*) malloc(len);
+					  len = BN_bn2bin(pubKeys[clsock[j] ], binconvert);
+						check = BN_bn2dec(pubKeys[clsock[j] ]);
+						cout << "pubkey= "<<check<<endl;
+						if (send(clsock[i], &len, sizeof(len), MSG_NOSIGNAL) < 0)
+						{
+								close(clsock[i]);  //close socket if send fails
+								clsock[i] = 0;	   //reset position to 0 								FD_CLR(clsock[i], &masterfds); //clr from set
 						     }
 					
 
@@ -210,15 +297,14 @@ int main(int argc, char* argv[])		//main takes command line arguments
 								close(clsock[i]);  //close socket if send fails
 								clsock[i] = 0;	   //reset position to 0 
 								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
-						
-						
-						cout << "\nSuccessfully added new socket to list\n";
-						break;
-					}
-				}
+								} */
 			}
-		}	
+		
+				  
+	
+		}
+	
+		
 		//run through the connections in list looking for data to be read
 		for (int j = 0; j < MAX_CLIENTS; ++j)
 		{

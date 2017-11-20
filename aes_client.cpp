@@ -81,9 +81,7 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	int buf_len;							//length for buffer that is read
 	//FILE* fp = fopen("dh256.pem", "r");
 	DH* dh = DH_new();
-	//	DH_generate_key(dh);
-	
-
+      
 	//256 bit key :  THIS WILL HAVE TO BE RANDOMLY GENERATED
 	unsigned char *key;// = (unsigned char*) malloc(DH_size(dh));
 	//memset(key, 0, DH_size(dh));
@@ -93,7 +91,8 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	unsigned char *iv = (unsigned char *)"0123456789012345";
 
 	//Message to be encrypted
-	unsigned char *plaintext = (unsigned char *)"The quick brown fox jumps over the lazy dog";
+	unsigned char *plaintext;
+// = (unsigned char *)"The quick brown fox jumps over the lazy dog";
 
 	/* Buffer for ciphertext. Ensure the buffer is long enough for the
 	* ciphertext which may be longer than the plaintext, dependant on the
@@ -151,6 +150,10 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	getsockname(sd, (struct sockaddr*)&addr, &sa_len);
 	cout << "admin: connected to server on '" << server->h_name << "' at '" 
 		<< portnum << "'" << " thru " << ntohs(addr.sin_port)  << endl;
+	
+	/************************************************************/
+	          //BEGIN IMPLEMENTATION OF DIFFIE HELLMAN:
+
 	int len; 
 	unsigned char* convertBn = new unsigned char;
 	BIGNUM * num = BN_new();
@@ -159,14 +162,13 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	
 	if ((valuerd = read(sd, convertBn, len)) <= 0)
 	  {
-	    	       cerr << "ERROR: Failed to read p from server socket\n";
+	    cerr << "ERROR: Failed to read p from server socket\n";
 
 	  }
 	
 	
-	BN_bin2bn(convertBn, len, num);
-	dh->p = num;
-	char * check = BN_bn2dec(num);
+	dh->p = BN_bin2bn(convertBn, len, NULL);
+	char * check = BN_bn2dec(dh->p);
 	cout<<"p = "<< check << endl;
 
 	 convertBn = new unsigned char;
@@ -174,15 +176,77 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	valuerd = read(sd, &len, sizeof(len));	//try to read what is in buffer	
 	if ((valuerd = read(sd, convertBn, len)) <= 0)
 	  {
-	    	       cerr << "ERROR: Failed to read g from server socket\n";
+	   cerr << "ERROR: Failed to read g from server socket\n";
 
 	  }
 	
 	
-	BN_bin2bn(convertBn, len, num);
-	dh-> g = num;
-	check = BN_bn2dec(num);
+	dh->g = BN_bin2bn(convertBn, len, NULL);
+	check = BN_bn2dec(dh->g);
 	cout<<"g = "<<check<<endl;
+	int codes;
+	if(-1 == DH_check(dh, &codes)) perror("something bad happened");
+	if(codes != 0)
+	  {
+	    /* Problems have been found with the generated parameters */
+	    printf("DH_check failed\n");
+	  
+	  }
+
+	if (1 != DH_generate_key(dh))  //generates the client's public key g^a mod p, g^b mod p
+	  {
+	    cerr <<"error setting pub key"<<endl;
+	    //exit(1);
+	      }
+	
+	len = BN_num_bytes(dh->pub_key);
+	convertBn = new unsigned char;
+	len = BN_bn2bin(dh->pub_key, convertBn);
+	cout << len<<endl;
+	check = BN_bn2dec(dh->priv_key);
+	cout<<"priv key "<<check<<endl;	
+
+	check = BN_bn2dec(dh->pub_key);
+	cout<<"pub key "<<check<<endl;
+	
+	/*if ((send(sd, &len, sizeof(len), 0)) < 0)
+	  {
+
+	    cerr<<"failed to send length of pubkey"<<endl;
+	    exit(1);
+	  }
+	
+	if ((send(sd, convertBn, len, 0)) < 0) 
+	  {
+	    cerr<<"failed to send pubkey"<<endl;
+	    exit(1);
+
+	  }
+	
+	valuerd = read(sd, &len, sizeof(len));	//try to read what is in buffer	
+	if ((valuerd = read(sd, convertBn, len)) <= 0)
+	  {
+	    	       cerr << "ERROR: Failed to read g from server socket\n";
+
+	  }
+	
+	key =  (unsigned char*) malloc(DH_size(dh));
+	memset(key, 0, DH_size(dh));
+	BIGNUM * pub_key2 = BN_new();
+	BN_bin2bn(convertBn, len, pub_key2);
+	check = BN_bn2dec(pub_key2);
+	cout<<"pubkey2 = "<<check<<endl;
+	DH_compute_key(key, pub_key2, dh); //computes shared key  
+	
+	cout<<"priv shared key = "<<key<<endl;
+	
+	*/
+	bool SharedKeyISCalculated = false;
+
+	/************************************************************/
+
+
+
 
 	while (1)	//while client is running
 	{
@@ -199,12 +263,56 @@ int main(int argc, char* argv[])			//main takes command line arguments
 		//check if there is anything to write 
 		if (FD_ISSET(STDIN_FILENO, &masterfds))
 		{
-			bzero(buf, 256);	//clear the buffer
+		  
+		  if ( !SharedKeyISCalculated){
+		
+		    len = BN_num_bytes(dh->pub_key);
+		    convertBn = new unsigned char;
+		    len = BN_bn2bin(dh->pub_key, convertBn);
+		    cout << len<<endl;
+		    check = BN_bn2dec(dh->priv_key);
+		    cout<<"priv key "<<check<<endl;	
+
+		    check = BN_bn2dec(dh->pub_key);
+		    cout<<"pub key "<<check<<endl;
+		    
+		    if ((send(sd, convertBn, len, 0)) < 0) 
+		      {
+			cerr<<"failed to send pubkey"<<endl;
+			exit(1);
+			
+		      }
+		    
+		    if ((valuerd = read(sd, convertBn, len)) <= 0)
+		      {
+	    	       cerr << "ERROR: Failed to read g from server socket\n";
+
+		      }
+		    
+		    key =  (unsigned char*) malloc(DH_size(dh));
+		    memset(key, 0, DH_size(dh));
+		    BIGNUM * pub_key2 = BN_new();
+		    BN_bin2bn(convertBn, len, pub_key2);
+		    check = BN_bn2dec(pub_key2);
+		    cout<<"pubkey2 = "<<check<<endl;
+		    DH_compute_key(key, pub_key2, dh); //computes shared key  
+	
+		    cout<<"priv shared key = "<<key<<endl;
+	
+
+		    SharedKeyISCalculated = true;
+
+			  }
+
+
+
+		    
+		    	bzero(buf, 256);	//clear the buffer
 			fgets(buf, 255, stdin);		//get the input and write it
 			
 			printf("inside FD_ISSET ready to write\n");
 			//Message to be encrypted
-			unsigned char *plaintext = (unsigned char *)buf; //(unsigned char *)"The quick brown fox jumps over the lazy dog";
+			plaintext = (unsigned char *)buf; //(unsigned char *)"The quick brown fox jumps over the lazy dog";
                
 			/* Encrypt the plaintext */
 			ciphertext_len = encrypt (plaintext, strlen ((char *)plaintext), key, iv, ciphertext);
@@ -219,13 +327,74 @@ int main(int argc, char* argv[])			//main takes command line arguments
 				close(STDIN_FILENO);
 				FD_CLR(STDIN_FILENO, &masterfds);
 			}	
+		
+
+
+
+
+		  
+
+		  
+
+
 		}
 		bzero(buf, BUFFER_SZ);	//clear the buffer before read
 		
 		//check if there is anything to read
 		if (FD_ISSET(sd, &masterfds)) 
 		{
-			printf("inside FD_ISSET ready to read\n");
+
+		  if  (!SharedKeyISCalculated){
+			
+
+		    if ((valuerd = read(sd, convertBn, len)) <= 0)
+		      {
+	    	       cerr << "ERROR: Failed to read g from server socket\n";
+
+		      }
+	
+
+		    key =  (unsigned char*) malloc(DH_size(dh));
+		    memset(key, 0, DH_size(dh));
+		    BIGNUM * pub_key2 = BN_new();
+		    BN_bin2bn(convertBn, len, pub_key2);
+		    check = BN_bn2dec(pub_key2);
+		    cout<<"pubkey2 = "<<check<<endl;
+		    DH_compute_key(key, pub_key2, dh); //computes shared key  
+	
+		    cout<<"priv shared key = "<<key<<endl;
+	
+		    	
+		    len = BN_num_bytes(dh->pub_key);
+		    convertBn = new unsigned char;
+		    len = BN_bn2bin(dh->pub_key, convertBn);
+		    cout << len<<endl;
+		    check = BN_bn2dec(dh->priv_key);
+		    cout<<"priv key "<<check<<endl;	
+
+		    check = BN_bn2dec(dh->pub_key);
+		    cout<<"pub key "<<check<<endl;
+	
+	
+		    if ((send(sd, convertBn, len, 0)) < 0) 
+		      {
+			cerr<<"failed to send pubkey"<<endl;
+			exit(1);
+
+		      }
+
+
+
+
+
+
+
+
+		    SharedKeyISCalculated = true;
+
+		  }
+
+printf("inside FD_ISSET ready to read\n");
 			valuerd = read(sd, buf, 255);	//try to read what is in buffer	
 			if ((valuerd < 0) || (valuerd == 0)) //if error or server is closed.
 			{
@@ -250,6 +419,10 @@ int main(int argc, char* argv[])			//main takes command line arguments
 				//cout << "\n" << buf << endl;
 				bzero(buf, BUFFER_SZ);
 			}
+		
+
+
+
 		}
 	}
 	return 0;	//Exit Main
