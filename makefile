@@ -1,15 +1,16 @@
 SHELL = /bin/sh
-CCC = g++ -std=c++0x
+CCC = g++ -std=c++11
 CCFLAGS = -Wall  -g -pedantic
 INCLUDES = -I. 
+LIBS = -lssl -lm -lcrypto
 
 all: chatserver chatclient 
 
-chatserver: server.cpp 
-	$(CCC) -o chatserver $(CCFLAGS) $(INCLUDES) server.cpp
+chatserver: aes_server.cpp 
+	$(CCC) -o chatserver $(CCFLAGS) $(INCLUDES) aes_server.cpp $(LIBS)
 
-chatclient: client.cpp 
-	$(CCC) -o  chatclient $(CCFLAGS) $(INCLUDES) client.cpp
+chatclient: aes_client.cpp 
+	$(CCC) -o  chatclient $(CCFLAGS) $(INCLUDES) aes_client.cpp $(LIBS)
 	
 .SUFFIXES:
 clean :
