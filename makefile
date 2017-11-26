@@ -1,6 +1,6 @@
 SHELL = /bin/sh
 CCC = g++ -std=c++11
-CCFLAGS = -Wall  -g -pedantic
+CCFLAGS = -Wall  -g -pedantic -fpermissive
 INCLUDES = -I. 
 LIBS = -lssl -lm -lcrypto
 
