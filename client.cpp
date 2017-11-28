@@ -11,11 +11,13 @@
 /*   http://linux.die.net/man/2/select, Beej's Guide     					 */
 /*****************************************************************************/
 
+/*****************************************************************************/
+/*       This file does AES mode and can do 64 bytes at a time               */
+/*****************************************************************************/
 
 #include <iostream>						//standard input/output stream objects
 #include <cstdlib>						//C standard general utilities library
 #include <cstring>						//C string class for string objects
-#include <cctype>
 #include <stdio.h>						//fgets 
 #include <unistd.h>						//Read, Write, Close functions	
 #include <netdb.h>						//IP address, hostent structures			
@@ -29,9 +31,9 @@
 #include <errno.h>
 #include <fstream>
 
-
 #include <openssl/crypto.h>
 #include <openssl/x509.h>
+#include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>	
 #include <openssl/conf.h>
@@ -42,11 +44,8 @@
 #include <openssl/buffer.h>
 #include <openssl/pem.h>
 
-
-#define BUFFER_SZ 256					//I/O Buffer size max text length
-//#define CIPHERTXT_SZ 512
+#define BUFFER_SZ 128					//I/O Buffer size max text length
 #define MAX_CLIENTS 100					//Maximum number of client connections
-
 
 using namespace std;
 
@@ -80,25 +79,25 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	fd_set masterfds;						//master set of socket descriptors
 	struct hostent *server;					//ptr to structure that defines a host computer
 	int decryptedtext_len, ciphertext_len;	//lengths for decrypted plaintext and ciphertext
-	int buf_len;							//length for buffer that is read
+
 	//FILE* fp = fopen("dh256.pem", "r");
 	DH* dh = DH_new();
       
-	//256 bit key :  THIS WILL HAVE TO BE RANDOMLY GENERATED
-	unsigned char *key;// = (unsigned char*) malloc(DH_size(dh));
-	//memset(key, 0, DH_size(dh));
-	  // (unsigned char *)"01234567890123456789012345678901";
+	//64 bit key :
+	unsigned char *key;
 
 	//128 bit KEY :  THIS WILL HAVE TO BE RANDOMLY GENERATED
 	unsigned char *iv = (unsigned char *)"0123456789012345";
+	//DES_cblock ivsetup = {0xE1, 0xE2, 0xE3, 0xD4, 0xD5, 0xC6, 0xC7, 0xA8};
+    //DES_cblock ivec;
+	//memcpy(ivec, ivsetup, sizeof(ivsetup));
 	
 	//Message to be encrypted
 	unsigned char *plaintext;
-// = (unsigned char *)"The quick brown fox jumps over the lazy dog";
 
 	/* Buffer for ciphertext. Ensure the buffer is long enough for the
 	* ciphertext which may be longer than the plaintext, dependant on the
-	* algorithm and mode
+	* algorithm and mode  WE HAVE BOTH SET TO 128 BITS
 	*/
 	unsigned char ciphertext[BUFFER_SZ];
 
@@ -153,19 +152,19 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	cout << "admin: connected to server on '" << server->h_name << "' at '" 
 		<< portnum << "'" << " thru " << ntohs(addr.sin_port)  << endl;
 	
-	/************************************************************/
-	          //BEGIN IMPLEMENTATION OF DIFFIE HELLMAN:
+/****************************************************************************************/
+				//BEGIN IMPLEMENTATION OF DIFFIE HELLMAN:
 
 	int len; 
 	unsigned char* convertBn = new unsigned char;
-	BIGNUM * num = BN_new();
+	BIGNUM * num = BN_new();    //this gives compiler warning but is necessary
+								//else get seg fault when program runs
 	
 	valuerd = read(sd, &len, sizeof(len));	//try to read what is in buffer	
 	
 	if ((valuerd = read(sd, convertBn, len)) <= 0)
 	  {
 	    cerr << "ERROR: Failed to read p from server socket\n";
-
 	  }
 	
 	
@@ -173,13 +172,12 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	char * check = BN_bn2dec(dh->p);
 	cout<<"p = "<< check << endl;
 
-	 convertBn = new unsigned char;
+	convertBn = new unsigned char;
 
 	valuerd = read(sd, &len, sizeof(len));	//try to read what is in buffer	
 	if ((valuerd = read(sd, convertBn, len)) <= 0)
 	  {
 	   cerr << "ERROR: Failed to read g from server socket\n";
-
 	  }
 	
 	
@@ -191,15 +189,14 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	if(codes != 0)
 	  {
 	    /* Problems have been found with the generated parameters */
-	    printf("DH_check failed\n");
-	  
+	    printf("DH_check failed\n");	  
 	  }
 
 	if (1 != DH_generate_key(dh))  //generates the client's public key g^a mod p, g^b mod p
-	  {
+	{
 	    cerr <<"error setting pub key"<<endl;
 	    //exit(1);
-	      }
+	}
 	
 	len = BN_num_bytes(dh->pub_key);
 	convertBn = new unsigned char;
@@ -210,13 +207,10 @@ int main(int argc, char* argv[])			//main takes command line arguments
 
 	check = BN_bn2dec(dh->pub_key);
 	cout<<"pub key "<<check<<endl;
-	
+
 	bool SharedKeyISCalculated = false;
 
-	/************************************************************/
-	int flag = 0;
-
-
+/******************************************************************************************/
 
 	while (1)	//while client is running
 	{
@@ -230,11 +224,12 @@ int main(int argc, char* argv[])			//main takes command line arguments
 			//exit(1);
 		}
 		
+/**************************************WRITE BLOCK*******************************/
 		//check if there is anything to write 
 		if (FD_ISSET(STDIN_FILENO, &masterfds))
-		{
-		  
-		  if ( !SharedKeyISCalculated){
+		{		  
+		  if ( !SharedKeyISCalculated)
+		  {
 		
 		    len = BN_num_bytes(dh->pub_key);
 		    convertBn = new unsigned char;
@@ -248,15 +243,13 @@ int main(int argc, char* argv[])			//main takes command line arguments
 		    
 		    if ((send(sd, convertBn, len, 0)) < 0) 
 		      {
-			cerr<<"failed to send pubkey"<<endl;
-			exit(1);
-			
+				cerr<<"failed to send pubkey"<<endl;
+				exit(1);
 		      }
 		    
 		    if ((valuerd = read(sd, convertBn, len)) <= 0)
 		      {
-	    	       cerr << "ERROR: Failed to read g from server socket\n";
-
+	    	    cerr << "ERROR: Failed to read g from server socket\n";
 		      }
 		    
 		    key =  (unsigned char*) malloc(DH_size(dh));
@@ -268,33 +261,12 @@ int main(int argc, char* argv[])			//main takes command line arguments
 		    DH_compute_key(key, pub_key2, dh); //computes shared key  
 	
 		    cout<<"priv shared key = "<<key<<endl;
-	
-
 		    SharedKeyISCalculated = true;
+		   }
 
-			  }
-
-		  
-
-		    
-		    	bzero(buf, 256);	//clear the buffer
+		    bzero(buf, 256);	//clear the buffer
 			fgets(buf, 255, stdin);		//get the input and write it
-		
-			if (flag == 0)
-			  {
-			    write(sd, buf,strlen(buf));
-			    int length = strlen(buf);
-			    
-			    for (int i = 0; i < length; i++)
-			      buf[i] = toupper(buf[i]);
-			    
-			    if (strcmp(buf,"AES") == 0)
-			      flag = 1;
-			    else if (strcmp(buf, "DES") == 0) 
-			      flag = 2;
-			      
-			  }
-			else if (flag == 1){ //encryption using AES
+			
 			printf("inside FD_ISSET ready to write\n");
 			//Message to be encrypted
 			plaintext = (unsigned char *)buf; //(unsigned char *)"The quick brown fox jumps over the lazy dog";
@@ -311,87 +283,21 @@ int main(int argc, char* argv[])			//main takes command line arguments
 			{
 				close(STDIN_FILENO);
 				FD_CLR(STDIN_FILENO, &masterfds);
-			}
-			
-			int length = strlen(buf);
-			    
-			    for (int i = 0; i < length; i++)
-			      buf[i] = toupper(buf[i]);
-			    
-			    if (strcmp(buf,"AES") == 0)
-			      flag = 1;
-			    else if (strcmp(buf, "DES") == 0) 
-			      flag = 2;
-			    else if(strcmp(buf,"3DES") == 0)
-			      flag = 3;
-
-
-			}
-
-			else if (flag == 2){ //DES encryption
-
-
-
-
-
-
-
-
-			int length = strlen(buf);
-			    
-			    for (int i = 0; i < length; i++)
-			      buf[i] = toupper(buf[i]);
-			    
-			    if (strcmp(buf,"AES") == 0)
-			      flag = 1;
-			    else if (strcmp(buf, "DES") == 0) 
-			      flag = 2;
-			    else if(strcmp(buf,"3DES") == 0)
-			      flag = 3;
-     
-		  
-			} else if ( flag == 3) //3DES enryption
-			  {
-			    
-
-
-
-
-
-
-
-			int length = strlen(buf);
-			    
-			    for (int i = 0; i < length; i++)
-			      buf[i] = toupper(buf[i]);
-			    
-			    if (strcmp(buf,"AES") == 0)
-			      flag = 1;
-			    else if (strcmp(buf, "DES") == 0) 
-			      flag = 2;
-			    else if(strcmp(buf,"3DES") == 0)
-			      flag = 3;
-
-			  }
-		  
-
-
+			}	
 		}
 		bzero(buf, BUFFER_SZ);	//clear the buffer before read
-		
+
+/**************************************READ BLOCK*******************************/		
 		//check if there is anything to read
 		if (FD_ISSET(sd, &masterfds)) 
 		{
-
-		  if  (!SharedKeyISCalculated){
+		  if  (!SharedKeyISCalculated)
+		  {
 			
-
 		    if ((valuerd = read(sd, convertBn, len)) <= 0)
 		      {
-	    	       cerr << "ERROR: Failed to read g from server socket\n";
-
+	    	    cerr << "ERROR: Failed to read g from server socket\n";
 		      }
-	
 
 		    key =  (unsigned char*) malloc(DH_size(dh));
 		    memset(key, 0, DH_size(dh));
@@ -403,7 +309,6 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	
 		    cout<<"priv shared key = "<<key<<endl;
 	
-		    	
 		    len = BN_num_bytes(dh->pub_key);
 		    convertBn = new unsigned char;
 		    len = BN_bn2bin(dh->pub_key, convertBn);
@@ -413,154 +318,41 @@ int main(int argc, char* argv[])			//main takes command line arguments
 
 		    check = BN_bn2dec(dh->pub_key);
 		    cout<<"pub key "<<check<<endl;
-	
-	
+
 		    if ((send(sd, convertBn, len, 0)) < 0) 
-		      {
-			cerr<<"failed to send pubkey"<<endl;
-			exit(1);
-
-		      }
-
+		     {
+				cerr<<"failed to send pubkey"<<endl;
+				exit(1);
+		     }
 
 		    SharedKeyISCalculated = true;
-
 		  }
 
-		  printf("inside FD_ISSET ready to read\n");
-		  valuerd = read(sd, buf, 255);	//try to read what is in buffer	
-		  
-		  if (flag == 0){
-		  		    
-
-			int length = strlen(buf);
-			    
-			    for (int i = 0; i < length; i++)
-			      buf[i] = toupper(buf[i]);
-			    
-			    if (strcmp(buf,"AES") == 0)
-			      flag = 1;
-			    else if (strcmp(buf, "DES") == 0) 
-			      flag = 2;
-			    else if(strcmp(buf,"3DES") == 0)
-			      flag = 3;
-			    else
-			      printf("%s\n", buf);		      
-		    
-		  }
-		  else if (flag == 1){ //aes decryption
-		  
-		  if ((valuerd < 0) || (valuerd == 0)) //if error or server is closed.
-		    {
-		      cerr << "ERROR: Failed to read from socket\n";
-		      exit(1);
-		    }
-		  
-		  if (valuerd > 0) //output the message that was read from buffer
-		    {
-		      int buf_len = size(&buf[0]);
-		      CharToUnsignedChar(buf, ciphertext, buf_len); 
-		      printf("inside FD_ISSET ready to read BEFORE make call to decrypt\n");
-		      decryptedtext_len = decrypt (ciphertext, /*ciphertext_len*/buf_len, key, iv, decryptedtext);
-		      printf("inside FD_ISSET ready to read AFTER make call to decrypt\n");
+			printf("inside FD_ISSET ready to read\n");
+			valuerd = read(sd, buf, 255);	//try to read what is in buffer	
+			if ((valuerd < 0) || (valuerd == 0)) //if error or server is closed.
+			{
+				cerr << "ERROR: Failed to read from socket\n";
+				exit(1);
+			}
+		
+			if (valuerd > 0) //output the message that was read from buffer
+			{
+				int buf_len = size(&buf[0]);
+				CharToUnsignedChar(buf, ciphertext, buf_len); 
+				printf("inside FD_ISSET ready to read BEFORE make call to decrypt\n");
+				decryptedtext_len = decrypt (ciphertext, /*ciphertext_len*/buf_len, key, iv, decryptedtext);
+				printf("inside FD_ISSET ready to read AFTER make call to decrypt\n");
 				/* Add a NULL terminator. We are expecting printable text */
-		      decryptedtext[decryptedtext_len] = '\0';
-		      
-		      /* Show the decrypted text */
-		      printf("Decrypted text is:\n");
-		      printf("%s\n", decryptedtext);
-		      
-		      buf = new char;
-		      unsignedchartochar(decryptedtext,buf, decryptedtext_len);
-		      int length = strlen(buf);
-			    
-		      for (int i = 0; i < length; i++)
-			buf[i] = toupper(buf[i]);
-			    
-		      if (strcmp(buf,"AES") == 0)
-			flag = 1;
-		      else if (strcmp(buf, "DES") == 0) 
-			flag = 2;
-		      else if(strcmp(buf,"3DES") == 0)
-			flag = 3;
+				decryptedtext[decryptedtext_len] = '\0';
 
-		      
-		      //cout << "\n" << buf << endl;
-		      bzero(buf, BUFFER_SZ);
-		    }
-			  else if (flag == 2){ //des decryption
-			
+				/* Show the decrypted text */
+				printf("Decrypted text is:\n");
+				printf("%s\n", decryptedtext);
 
-
-
-
-
-
-
-
-			    buf = new char;
-		      unsignedchartochar(decryptedtext,buf, decryptedtext_len);
-			int length = strlen(buf);
-			    
-			    for (int i = 0; i < length; i++)
-			      buf[i] = toupper(buf[i]);
-			    
-			    if (strcmp(buf,"AES") == 0)
-			      flag = 1;
-			    else if (strcmp(buf, "DES") == 0) 
-			      flag = 2;
-			    else if(strcmp(buf,"3DES") == 0)
-			      flag = 3;
-
-		      
-		      //cout << "\n" << buf << endl;
-		      bzero(buf, BUFFER_SZ);
-		  
-
-
-
-  }
-	  else if (flag == 3){ //3des decryption
-	    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	        buf = new char;
-		      unsignedchartochar(decryptedtext,buf, decryptedtext_len);
-			int length = strlen(buf);
-			    
-			    for (int i = 0; i < length; i++)
-			      buf[i] = toupper(buf[i]);
-			    
-			    if (strcmp(buf,"AES") == 0)
-			      flag = 1;
-			    else if (strcmp(buf, "DES") == 0) 
-			      flag = 2;
-			    else if(strcmp(buf,"3DES") == 0)
-			      flag = 3;
-
-		      
-		      //cout << "\n" << buf << endl;
-		      bzero(buf, BUFFER_SZ);
-		  
-
-	    
-	  }
-		  }
-
-
+				//cout << "\n" << buf << endl;
+				bzero(buf, BUFFER_SZ);
+			}
 		}
 	}
 	return 0;	//Exit Main
@@ -615,15 +407,15 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
 
   int ciphertext_len;
 
-  /* Create and initialize the context */
+  /* Create and initialise the context */
   if(!(ctx = EVP_CIPHER_CTX_new())) handleErrors();
 
-  /* Initialize the encryption operation. IMPORTANT - ensure you use a key
+  /* Initialise the encryption operation. IMPORTANT - ensure you use a key
    * and IV size appropriate for your cipher
-   * In this example we are using 256 bit AES (i.e. a 256 bit key). The
-   * IV size for *most* modes is the same as the block size. For AES this
-   * is 128 bits */
-  if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
+   * In this example we are using DES in CBC Mode (i.e. a 64 bit key). The
+   * IV size for *most* modes is the same as the block size. 
+   */
+  if(1 != EVP_EncryptInit_ex(ctx, EVP_des_cbc(), NULL, key, iv))
     handleErrors();
 
   /* Provide the message to be encrypted, and obtain the encrypted output.
@@ -659,10 +451,10 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
 
   /* Initialise the decryption operation. IMPORTANT - ensure you use a key
    * and IV size appropriate for your cipher
-   * In this example we are using 256 bit AES (i.e. a 256 bit key). The
-   * IV size for *most* modes is the same as the block size. For AES this
-   * is 128 bits */
-  if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
+   * In this example we are using DES in CBC Mode (i.e. a 64 bit key). The
+   * IV size for *most* modes is the same as the block size. 
+   */
+  if(1 != EVP_DecryptInit_ex(ctx, EVP_des_cbc(), NULL, key, iv))
     handleErrors();
 
   /* Provide the message to be decrypted, and obtain the plaintext output.
@@ -689,4 +481,3 @@ void handleErrors(void)
   ERR_print_errors_fp(stderr);
   abort();
 }
-
