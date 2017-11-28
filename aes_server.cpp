@@ -14,7 +14,7 @@
 #include <iostream>						//standard input/output stream objects
 #include <cstdlib>						//C standard general utilities library
 #include <cstring>						//C string class for string objects
-#include <map>
+#include <map>							//data structure map container
 #include <netdb.h>						//IP address and port # structures	
 #include <unistd.h>						//Read and Close functions
 #include <sys/types.h> 					//for porting socket programs
@@ -22,12 +22,13 @@
 #include <arpa/inet.h>					//inet_ntoa()
 #include <netinet/in.h>					//byte order conversion functions
 										//data structures defined by internet
-#include <stdio.h>
-#include <stdlib.h>
-#include <memory.h>
-#include <errno.h>
+#include <signal.h>						//Ctrl-C
+#include <stdio.h>						//C library for IO	
+#include <stdlib.h>						//C library general utilities
+#include <memory.h>						//dynamic memory
+#include <errno.h>						//system error numbers
 
-#include <openssl/rsa.h>
+#include <openssl/rsa.h>				//openssl libraries
 #include <openssl/crypto.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
@@ -38,11 +39,10 @@
 #include <openssl/engine.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
-
-										
+									
 																			
 #define BUFFER_SZ 256					//I/O Buffer size max text length
-#define MAX_CLIENTS 100					//Maximum number of client connections
+#define MAX_CLIENTS 10					//Maximum number of client connections
 
 using namespace std;
 
@@ -57,7 +57,7 @@ int main(int argc, char* argv[])		//main takes command line arguments
 	int nsd;							//new socket descriptor
 	int portnum = 0;					//port number
 	int fdmax;							//maximum file descriptor number
-	int len;
+	int len;							//size in bytes for BIGNUM
 	int value;							//check # bytes returned by read 
 	int yes = 1;						//for setsockopt() SO_REUSEADDR
 	char buf[BUFFER_SZ];				//buffer for messaging (read/write)
@@ -68,10 +68,13 @@ int main(int argc, char* argv[])		//main takes command line arguments
 	socklen_t addlen;					//length of address
 	socklen_t lengthvar;				//used for getsockname()
 	struct hostent *server;				//ptr to structure that defines a host computer
-	DH *dh;
-	unsigned char* binconvert;
-	map<int, BIGNUM*> pubKeys;
+	DH *dh;								//DH struct:  p, g, priv key, pub key
+	unsigned char* binconvert;			//convert bigNum to unsigned char*
+	map<int, BIGNUM*> pubKeys;			//map container for public Key
 
+	
+	// signal handler
+    //signal(SIGINT, siginthandler);
 
 	dh =  DH_generate_parameters(256, 2, NULL, NULL);    //generates prime p & g = 2 
 	int codes;
@@ -104,8 +107,8 @@ int main(int argc, char* argv[])		//main takes command line arguments
 		exit(1);
 	}
 	
-	bzero((char*)&serv_addr, sizeof(serv_addr));				//zero the machine IP address
-	serv_addr.sin_family = AF_INET;					//set to internet family
+	bzero((char*)&serv_addr, sizeof(serv_addr));		//zero the machine IP address
+	serv_addr.sin_family = AF_INET;						//set to internet family
 	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);		//use any card on server/machine
 	serv_addr.sin_port = htons(portnum);				//set port number
 
@@ -131,8 +134,6 @@ int main(int argc, char* argv[])		//main takes command line arguments
 	cout << "admin: started server on '" << server->h_name << "'" << " at port '" << ntohs(serv_addr.sin_port) << "'\n";
 	cout << "admin: server IP address " << inet_ntoa(*(struct in_addr*)server->h_addr) 
 	     << " at port " << ntohs(serv_addr.sin_port) << endl;
-	//cout << "gethostaddr IP Address is: " << gethostaddr(hostname) << endl;
-	
 	
 	while (1)						//while server is running
 	{	
@@ -169,13 +170,11 @@ int main(int argc, char* argv[])		//main takes command line arguments
 			}
 			else	//if new connection was succesful add to list
 			{
-				cout << "new connection socket FD: is " << nsd << endl;
+				cout << "\nNew connection socket FD: is " << nsd << endl;
 				cout << " IP address is: " << inet_ntoa(serv_addr.sin_addr) << endl; 
-				cout << " Port number is: " << ntohs(serv_addr.sin_port) << endl;
-				
+				cout << " Port number is: " << ntohs(serv_addr.sin_port) << endl;				
 				cout << "admin: connect from '" << server->h_name << "'" << " at '" << ntohs(serv_addr.sin_port) << "'\n";
 				
-
 				char * check;
 
 				for (int i = 0; i < MAX_CLIENTS; ++i)
@@ -184,8 +183,7 @@ int main(int argc, char* argv[])		//main takes command line arguments
 					{
 						clsock[i] = nsd;	//add new socket descriptor to list
 						
-
-						//for diffie helman we send the prime to the new client
+						//for diffie helman we send prime and generator to the new client
 						len = BN_num_bytes(dh->p);
 						binconvert = (unsigned char*) malloc(len);
 						len = BN_bn2bin(dh->p, binconvert);
@@ -193,17 +191,17 @@ int main(int argc, char* argv[])		//main takes command line arguments
 						cout << "p= "<<check<<endl;
 						if (send(clsock[i], &len, sizeof(len), MSG_NOSIGNAL) < 0)
 						{
-								close(clsock[i]);  //close socket if send fails
-								clsock[i] = 0;	   //reset position to 0 
-								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
+							close(clsock[i]);  //close socket if send fails
+							clsock[i] = 0;	   //reset position to 0 
+							FD_CLR(clsock[i], &masterfds); //clr from set
+						}
 						
 						if (send(clsock[i], binconvert,  len, MSG_NOSIGNAL) < 0)
-						   {
-								close(clsock[i]);  //close socket if send fails
-								clsock[i] = 0;	   //reset position to 0 
-								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
+						{
+							close(clsock[i]);  //close socket if send fails
+							clsock[i] = 0;	   //reset position to 0 
+							FD_CLR(clsock[i], &masterfds); //clr from set
+						}  //finished sending p
 						
 						len = BN_num_bytes(dh->g);
 						binconvert = (unsigned char*) malloc(len);
@@ -212,33 +210,26 @@ int main(int argc, char* argv[])		//main takes command line arguments
 						cout << "g= "<<check<<endl;
 						if (send(clsock[i], &len, sizeof(len), MSG_NOSIGNAL) < 0)
 						{
-								close(clsock[i]);  //close socket if send fails
-								clsock[i] = 0;	   //reset position to 0      
-								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
+							close(clsock[i]);  //close socket if send fails
+							clsock[i] = 0;	   //reset position to 0      
+							FD_CLR(clsock[i], &masterfds); //clr from set
+						}
 						
-						//and the generator to the new client
-					
+						//send the generator to the new client
 						if (send(clsock[i], binconvert, len, MSG_NOSIGNAL) < 0)
-						   {
-								close(clsock[i]);  //close socket if send fails
-								clsock[i] = 0;	   //reset position to 0 
-								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
-					    	 //finished sending g
+						{
+							close(clsock[i]);  //close socket if send fails
+							clsock[i] = 0;	   //reset position to 0 
+							FD_CLR(clsock[i], &masterfds); //clr from set
+						}  //finished sending g
 									
-	
 						cout << "\nSuccessfully added new socket to list\n";
 						break;
 					}
 				}
 			}
-		
-				  
-	
 		}
-	
-		
+			
 		//run through the connections in list looking for data to be read
 		for (int j = 0; j < MAX_CLIENTS; ++j)
 		{
@@ -262,7 +253,7 @@ int main(int argc, char* argv[])		//main takes command line arguments
 						if ((clsock[c] > 0)	 && (clsock[c] != cd))   
 						{
 							//CODE FOR TESTING PURPOSES
-							cout << "Your buffer to client " << clsock[c]
+							cout << "\nYour buffer to client " << clsock[c]
 								<< " " << buf << endl;
 								
 							//if send fails

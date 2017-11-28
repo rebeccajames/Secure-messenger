@@ -6,11 +6,11 @@ LIBS = -lssl -lm -lcrypto
 
 all: chatserver chatclient 
 
-chatserver: aes_server.cpp 
-	$(CCC) -o chatserver $(CCFLAGS) $(INCLUDES) aes_server.cpp $(LIBS)
+chatserver: server.cpp 
+	$(CCC) -o chatserver $(CCFLAGS) $(INCLUDES) server.cpp $(LIBS)
 
-chatclient: aes_client.cpp 
-	$(CCC) -o  chatclient $(CCFLAGS) $(INCLUDES) aes_client.cpp $(LIBS)
+chatclient: client.cpp 
+	$(CCC) -o  chatclient $(CCFLAGS) $(INCLUDES) client.cpp $(LIBS)
 	
 .SUFFIXES:
 clean :
