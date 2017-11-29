@@ -22,6 +22,7 @@
 #include <arpa/inet.h>					//inet_ntoa()
 #include <netinet/in.h>					//byte order conversion functions
 										//data structures defined by internet
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
@@ -38,11 +39,10 @@
 #include <openssl/engine.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
-
-										
+									
 																			
 #define BUFFER_SZ 256					//I/O Buffer size max text length
-#define MAX_CLIENTS 100					//Maximum number of client connections
+#define MAX_CLIENTS 10					//Maximum number of client connections
 
 using namespace std;
 
@@ -72,6 +72,9 @@ int main(int argc, char* argv[])		//main takes command line arguments
 	unsigned char* binconvert;
 	map<int, BIGNUM*> pubKeys;
 
+	
+	//signal handler
+    //signal(SIGINT, siginthandler);
 
 	dh =  DH_generate_parameters(256, 2, NULL, NULL);    //generates prime p & g = 2 
 	int codes;
@@ -131,9 +134,7 @@ int main(int argc, char* argv[])		//main takes command line arguments
 	cout << "admin: started server on '" << server->h_name << "'" << " at port '" << ntohs(serv_addr.sin_port) << "'\n";
 	cout << "admin: server IP address " << inet_ntoa(*(struct in_addr*)server->h_addr) 
 	     << " at port " << ntohs(serv_addr.sin_port) << endl;
-	//cout << "gethostaddr IP Address is: " << gethostaddr(hostname) << endl;
-	
-	
+
 	while (1)						//while server is running
 	{	
 		FD_ZERO(&masterfds);		// clear the master socket set
@@ -185,7 +186,7 @@ int main(int argc, char* argv[])		//main takes command line arguments
 						clsock[i] = nsd;	//add new socket descriptor to list
 						
 
-						//for diffie helman we send the prime to the new client
+						//for diffie helman we send prime p and g to the new client
 						len = BN_num_bytes(dh->p);
 						binconvert = (unsigned char*) malloc(len);
 						len = BN_bn2bin(dh->p, binconvert);
@@ -196,14 +197,14 @@ int main(int argc, char* argv[])		//main takes command line arguments
 								close(clsock[i]);  //close socket if send fails
 								clsock[i] = 0;	   //reset position to 0 
 								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
+						}
 						
 						if (send(clsock[i], binconvert,  len, MSG_NOSIGNAL) < 0)
-						   {
-								close(clsock[i]);  //close socket if send fails
-								clsock[i] = 0;	   //reset position to 0 
-								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
+						{
+							close(clsock[i]);  //close socket if send fails
+							clsock[i] = 0;	   //reset position to 0 
+							FD_CLR(clsock[i], &masterfds); //clr from set
+						}  // done sending prime p
 						
 						len = BN_num_bytes(dh->g);
 						binconvert = (unsigned char*) malloc(len);
@@ -212,30 +213,24 @@ int main(int argc, char* argv[])		//main takes command line arguments
 						cout << "g= "<<check<<endl;
 						if (send(clsock[i], &len, sizeof(len), MSG_NOSIGNAL) < 0)
 						{
-								close(clsock[i]);  //close socket if send fails
-								clsock[i] = 0;	   //reset position to 0      
-								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
+							close(clsock[i]);  //close socket if send fails
+							clsock[i] = 0;	   //reset position to 0      
+							FD_CLR(clsock[i], &masterfds); //clr from set
+						}
 						
-						//and the generator to the new client
-					
+						//send the generator to the new client
 						if (send(clsock[i], binconvert, len, MSG_NOSIGNAL) < 0)
-						   {
-								close(clsock[i]);  //close socket if send fails
-								clsock[i] = 0;	   //reset position to 0 
-								FD_CLR(clsock[i], &masterfds); //clr from set
-						     }
-					    	 //finished sending g
-									
-	
+						{
+							close(clsock[i]);  //close socket if send fails
+							clsock[i] = 0;	   //reset position to 0 
+							FD_CLR(clsock[i], &masterfds); //clr from set
+						}  //finished sending g
+
 						cout << "\nSuccessfully added new socket to list\n";
 						break;
 					}
 				}
 			}
-		
-				  
-	
 		}
 	
 		

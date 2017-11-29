@@ -12,7 +12,7 @@
 /*****************************************************************************/
 
 /*****************************************************************************/
-/*   This file does DES in ECB mode but only 8 bytes at a time               */
+/*       This file does AES mode and can do 64 bytes at a time               */
 /*****************************************************************************/
 
 #include <iostream>						//standard input/output stream objects
@@ -30,8 +30,7 @@
 #include <memory.h>
 #include <errno.h>
 #include <fstream>
-#include <string.h>
-
+#include <chrono>
 #include <openssl/crypto.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
@@ -44,11 +43,6 @@
 #include <openssl/engine.h>
 #include <openssl/buffer.h>
 #include <openssl/pem.h>
-
-#include <openssl/des.h>
-#include <openssl/rand.h>
-#include <openssl/rsa.h>
-
 
 #define BUFFER_SZ 128					//I/O Buffer size max text length
 #define MAX_CLIENTS 100					//Maximum number of client connections
@@ -84,31 +78,36 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	char buf[BUFFER_SZ];					//buffer for messaging (read/write)
 	fd_set masterfds;						//master set of socket descriptors
 	struct hostent *server;					//ptr to structure that defines a host computer
-	
-	
-	unsigned char in[BUFFER_SZ], out[BUFFER_SZ], back[BUFFER_SZ];
-    unsigned char *e = out;
- 
+	int decryptedtext_len, ciphertext_len;	//lengths for decrypted plaintext and ciphertext
+
 	//FILE* fp = fopen("dh256.pem", "r");
 	DH* dh = DH_new();
       
-	unsigned char *dhkey;	// = (unsigned char*) malloc(DH_size(dh));
+	//64 bit key :
+	unsigned char *key;
+
+	//128 bit KEY :  THIS WILL HAVE TO BE RANDOMLY GENERATED
+	unsigned char *iv = (unsigned char *)"0123456789012345";
+	//DES_cblock ivsetup = {0xE1, 0xE2, 0xE3, 0xD4, 0xD5, 0xC6, 0xC7, 0xA8};
+    //DES_cblock ivec;
+	//memcpy(ivec, ivsetup, sizeof(ivsetup));
 	
+	//Message to be encrypted
+	unsigned char *plaintext;
+
+	/* Buffer for ciphertext. Ensure the buffer is long enough for the
+	* ciphertext which may be longer than the plaintext, dependant on the
+	* algorithm and mode  WE HAVE BOTH SET TO 128 BITS
+	*/
+	unsigned char ciphertext[BUFFER_SZ];
+
+	//Buffer for the decrypted text 
+	unsigned char decryptedtext[BUFFER_SZ];
+
 	//Initialise the library
 	ERR_load_crypto_strings();
 	OpenSSL_add_all_algorithms();
 	OPENSSL_config(NULL);
-	
-	//OTHER TUTORIAL  http://www.caole.net/diary/des.html
-	DES_cblock key;
-    /**//* DES_random_key(&key); */ /**//* generate a random key */
-    DES_string_to_key("passwastooshortz", &key);
-
-    DES_key_schedule schedule;
-    DES_set_key_checked(&key, &schedule); 
-
-    //const_DES_cblock input = "hehehe";
-    DES_cblock output;
 	
     if (argc < 3) 
 	{
@@ -145,6 +144,7 @@ int main(int argc, char* argv[])			//main takes command line arguments
 		exit(1);
 	}
 
+	
 	sa_len = sizeof(struct sockaddr);	//get length of address
 	gethostname(hostname, sizeof(hostname));	//get name of server
 	server = gethostbyname(hostname);			//change format of server name
@@ -152,65 +152,65 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	cout << "admin: connected to server on '" << server->h_name << "' at '" 
 		<< portnum << "'" << " thru " << ntohs(addr.sin_port)  << endl;
 	
-	/************************************************************/
-	          //BEGIN IMPLEMENTATION OF DIFFIE HELLMAN:
+/****************************************************************************************/
+				//BEGIN IMPLEMENTATION OF DIFFIE HELLMAN:
 
 	int len; 
 	unsigned char* convertBn = new unsigned char;
-	BIGNUM * num = BN_new();
+	BIGNUM * num = BN_new();    //this gives compiler warning but is necessary
+								//else get seg fault when program runs
 	
 	valuerd = read(sd, &len, sizeof(len));	//try to read what is in buffer	
 	
 	if ((valuerd = read(sd, convertBn, len)) <= 0)
 	  {
 	    cerr << "ERROR: Failed to read p from server socket\n";
-
 	  }
+	
 	
 	dh->p = BN_bin2bn(convertBn, len, NULL);
 	char * check = BN_bn2dec(dh->p);
-	cout<<"p = "<< check << endl;
+	cout<<"Prime p is:\n "<< check << endl;
 
-	 convertBn = new unsigned char;
+	convertBn = new unsigned char;
 
 	valuerd = read(sd, &len, sizeof(len));	//try to read what is in buffer	
 	if ((valuerd = read(sd, convertBn, len)) <= 0)
 	  {
-		cerr << "ERROR: Failed to read g from server socket\n";
+	   cerr << "ERROR: Failed to read g from server socket\n";
 	  }
-
+	
+	
 	dh->g = BN_bin2bn(convertBn, len, NULL);
 	check = BN_bn2dec(dh->g);
-	cout<<"g = "<<check<<endl;
+	cout<<"Generator g is:\n "<<check<<endl;
 	int codes;
 	if(-1 == DH_check(dh, &codes)) perror("something bad happened");
 	if(codes != 0)
 	  {
 	    /* Problems have been found with the generated parameters */
-	    printf("DH_check failed\n");
-	  
+	    printf("DH_check failed\n");	  
 	  }
 
 	if (1 != DH_generate_key(dh))  //generates the client's public key g^a mod p, g^b mod p
-	  {
+	{
 	    cerr <<"error setting pub key"<<endl;
 	    //exit(1);
-	  }
+	}
 	
 	len = BN_num_bytes(dh->pub_key);
 	convertBn = new unsigned char;
 	len = BN_bn2bin(dh->pub_key, convertBn);
-	cout << len<<endl;
+	//cout << len<<endl;
 	check = BN_bn2dec(dh->priv_key);
-	cout<<"priv key "<<check<<endl;	
+	cout<<"Private key is:\n "<<check<<endl;
 
 	check = BN_bn2dec(dh->pub_key);
-	cout<<"pub key "<<check<<endl;
-	
+	cout<<"Public key is: \n"<<check<<endl;
+
 	bool SharedKeyISCalculated = false;
 
-				//END IMPLEMENTATION OF DIFFIE HELLMAN:
-	/************************************************************/
+/******************************************************************************************/
 
 	while (1)	//while client is running
 	{
@@ -224,21 +224,22 @@ int main(int argc, char* argv[])			//main takes command line arguments
 			//exit(1);
 		}
 		
+/**************************************WRITE BLOCK*******************************/
 		//check if there is anything to write 
 		if (FD_ISSET(STDIN_FILENO, &masterfds))
-		{
-		  
-		  if ( !SharedKeyISCalculated){
+		{		  
+		  if ( !SharedKeyISCalculated)
+		  {
 		
 		    len = BN_num_bytes(dh->pub_key);
 		    convertBn = new unsigned char;
 		    len = BN_bn2bin(dh->pub_key, convertBn);
-		    cout << len<<endl;
+		    //cout << len<<endl;
 		    check = BN_bn2dec(dh->priv_key);
-		    cout<<"priv key "<<check<<endl;	
+		    cout<<"Private key "<<check<<endl;
 
 		    check = BN_bn2dec(dh->pub_key);
-		    cout<<"pub key "<<check<<endl;
+		    cout<<"Public key "<<check<<endl;
 		    
 		    if ((send(sd, convertBn, len, 0)) < 0) 
 		      {
@@ -248,99 +249,92 @@ int main(int argc, char* argv[])			//main takes command line arguments
 		    
 		    if ((valuerd = read(sd, convertBn, len)) <= 0)
 		      {
-	    	     cerr << "ERROR: Failed to read g from server socket\n";
+	    	    cerr << "ERROR: Failed to read g from server socket\n";
 		      }
 		    
-		    dhkey =  (unsigned char*) malloc(DH_size(dh));
-		    memset(dhkey, 0, DH_size(dh));
+		    key =  (unsigned char*) malloc(DH_size(dh));
+		    memset(key, 0, DH_size(dh));
 		    BIGNUM * pub_key2 = BN_new();
 		    BN_bin2bn(convertBn, len, pub_key2);
 		    check = BN_bn2dec(pub_key2);
-		    cout<<"pubkey2 = "<<check<<endl;
-		    DH_compute_key(dhkey, pub_key2, dh); //computes shared key  
+		    cout<<"Publick key2 is:\n "<<check<<endl;
+		    DH_compute_key(key, pub_key2, dh); //computes shared key  
 	
-		    cout<<"priv shared key = "<<dhkey<<endl;
-	
-
+		    cout<<"Private shared key is:\n "<<key<<endl;
+              
 		    SharedKeyISCalculated = true;
-			
-		  }
+		   }
 
 		    bzero(buf, 256);	//clear the buffer
 			fgets(buf, 255, stdin);		//get the input and write it
 			
-			printf("inside FD_ISSET ready to write\n");
+			//printf("inside FD_ISSET ready to write\n");
+			//Message to be encrypted
+			plaintext = (unsigned char *)buf; //(unsigned char *)"The quick brown fox jumps over the lazy dog";
+            auto t1 = chrono::high_resolution_clock::now();
 
-//Read more: https://blog.fpmurphy.com/2010/04/openssl-des-api.html#ixzz4zDAHrApK
-
-
-			const_DES_cblock input = "\0";
-			strcpy(input, buf);
-
-/*   THIS BLOCK DEMONSTRATES HOW OT WRITE 64 BYTES = CURRENTLY WE CAN ONLY WRITE 8 BYTES 
-			strcpy(in, "Now is the time for all men to stand up and be counted");
- 
-			printf("Plaintext: [%s]\n", in);
- 
-			for (i = 0; i < 63; i += 8) {
-				DES_ecb3_encrypt((C_Block *)(in + i),(C_Block *)(out + i), &keysched, DES_ENCRYPT);
-			}
-*/			
- 
+			/* Encrypt the plaintext */
+			ciphertext_len = encrypt (plaintext, strlen ((char *)plaintext), key, iv, ciphertext);
+            auto t2 = chrono::high_resolution_clock::now();
+            chrono::duration<int64_t,nano> elapsed = t2 - t1; //
+            cout << endl;
+            cout << "Encryption Runtime is: " << elapsed.count() << " nanoseconds.\n";
+            printf("Ciphertext is:\n");
+			BIO_dump_fp (stdout, (const char *)ciphertext, ciphertext_len);
 	
-					
-			DES_ecb_encrypt(&input, &output, &schedule, DES_ENCRYPT);
-			printf("\nEncrypted! ");
-
-			unsignedCharToChar(output, buf, strlen(output));
-			if ((valuew = write(sd, buf, strlen(buf))) < 0)	
+			unsignedCharToChar(ciphertext, buf, ciphertext_len);
+			if ((valuew = write(sd, buf, strlen(buf))) < 0)
+			//if ((valuew = write(sd, ciphertext, strlen(ciphertext))) < 0)
 			{
 				close(STDIN_FILENO);
 				FD_CLR(STDIN_FILENO, &masterfds);
 			}	
 		}
 		bzero(buf, BUFFER_SZ);	//clear the buffer before read
-		
+
+/**************************************READ BLOCK*******************************/		
 		//check if there is anything to read
 		if (FD_ISSET(sd, &masterfds)) 
 		{
-		  if  (!SharedKeyISCalculated){
-		    
-			if ((valuerd = read(sd, convertBn, len)) <= 0)
+		  if  (!SharedKeyISCalculated)
+		  {
+			
+		    if ((valuerd = read(sd, convertBn, len)) <= 0)
 		      {
-	    	       cerr << "ERROR: Failed to read g from server socket\n";
+	    	    cerr << "ERROR: Failed to read g from server socket\n";
 		      }
-	
-		    dhkey =  (unsigned char*) malloc(DH_size(dh));
-		    memset(dhkey, 0, DH_size(dh));
+
+		    key =  (unsigned char*) malloc(DH_size(dh));
+		    memset(key, 0, DH_size(dh));
 		    BIGNUM * pub_key2 = BN_new();
 		    BN_bin2bn(convertBn, len, pub_key2);
 		    check = BN_bn2dec(pub_key2);
-		    cout<<"pubkey2 = "<<check<<endl;
-		    DH_compute_key(dhkey, pub_key2, dh); //computes shared key  
+		    cout<<"Public key2 is:\n "<<check<<endl;
+		    DH_compute_key(key, pub_key2, dh); //computes shared key  
 	
-		    cout<<"priv shared key = "<<key<<endl;
+		    cout<<"Shared key is:\n "<<key<<endl;
 	
 		    len = BN_num_bytes(dh->pub_key);
 		    convertBn = new unsigned char;
 		    len = BN_bn2bin(dh->pub_key, convertBn);
-		    cout << len<<endl;
+		    //cout << len<<endl;
 		    check = BN_bn2dec(dh->priv_key);
-		    cout<<"priv key "<<check<<endl;	
+		    cout<<"Privet key is:\n "<<check<<endl;
 
 		    check = BN_bn2dec(dh->pub_key);
-		    cout<<"pub key "<<check<<endl;
-	
+		    cout<<"Public key is:\n"<<check<<endl;
+              
+
 		    if ((send(sd, convertBn, len, 0)) < 0) 
-		      {
+		     {
 				cerr<<"failed to send pubkey"<<endl;
 				exit(1);
-		      }
-		    SharedKeyISCalculated = true;
+		     }
 
+		    SharedKeyISCalculated = true;
 		  }
 
-			printf("inside FD_ISSET ready to read\n");
+			//printf("inside FD_ISSET ready to read\n");
 			valuerd = read(sd, buf, 255);	//try to read what is in buffer	
 			if ((valuerd < 0) || (valuerd == 0)) //if error or server is closed.
 			{
@@ -350,27 +344,24 @@ int main(int argc, char* argv[])			//main takes command line arguments
 		
 			if (valuerd > 0) //output the message that was read from buffer
 			{
-				const_DES_cblock input = "\0";
-				printf("\nReceived Ciphertext:\n");
-				printf("%s\n", buf);
 				int buf_len = size(&buf[0]);
-				printf("size of buf = %d\n", buf_len);
-				CharToUnsignedChar(buf, output, buf_len); 
-				printf("after chartounsignedchar before decryption\n");
-				
-				//for (int i = 0; i < 63; i += 8) {
-				//DES_ecb_encrypt((C_Block *)(in + i),(C_Block *)(out + i), &keysched, DES_ENCRYPT);
+				CharToUnsignedChar(buf, ciphertext, buf_len); 
+			//	printf("inside FD_ISSET ready to read BEFORE make call to decrypt\n");
+                auto t1 = chrono::high_resolution_clock::now();
+				decryptedtext_len = decrypt (ciphertext, /*ciphertext_len*/buf_len, key, iv, decryptedtext);
+                auto t2 = chrono::high_resolution_clock::now();
+                chrono::duration<int64_t,nano> elapsed = t2 - t1;
+			//	printf("inside FD_ISSET ready to read AFTER make call to decrypt\n");
+				/* Add a NULL terminator. We are expecting printable text */
+				decryptedtext[decryptedtext_len] = '\0';
 
-				//}
-				
-				DES_ecb_encrypt(&output, &input, &schedule, DES_DECRYPT);
-				int input_len = strlen(input);
-				printf("Size of input = %d\n", input_len);
-				
-				input[input_len] = '\0';  //this is input_len not buf_len 
-				
-				printf("\nDecrypted!\n");
-				printf("%s\n ", input);
+				/* Show the decrypted text */
+				printf("Decrypted text is:\n");
+				printf("%s\n", decryptedtext);
+                cout << endl;
+                cout << "Decryption Runtime is: " << elapsed.count() << " nanoseconds.";
+
+				//cout << "\n" << buf << endl;
 				bzero(buf, BUFFER_SZ);
 			}
 		}
@@ -418,3 +409,86 @@ int size(char *ptr)
     return count;
 }
 
+int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
+  unsigned char *iv, unsigned char *ciphertext)
+{
+  EVP_CIPHER_CTX *ctx;
+
+  int len;
+
+  int ciphertext_len;
+
+  /* Create and initialise the context */
+  if(!(ctx = EVP_CIPHER_CTX_new())) handleErrors();
+
+  /* Initialise the encryption operation. IMPORTANT - ensure you use a key
+   * and IV size appropriate for your cipher
+   * In this example we are using DES in CBC Mode (i.e. a 64 bit key). The
+   * IV size for *most* modes is the same as the block size. 
+   */
+  if(1 != EVP_EncryptInit_ex(ctx, EVP_des_cbc(), NULL, key, iv))
+    handleErrors();
+
+  /* Provide the message to be encrypted, and obtain the encrypted output.
+   * EVP_EncryptUpdate can be called multiple times if necessary
+   */
+  if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
+    handleErrors();
+  ciphertext_len = len;
+
+  /* Finalise the encryption. Further ciphertext bytes may be written at
+   * this stage.
+   */
+  if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) handleErrors();
+  ciphertext_len += len;
+
+  /* Clean up */
+  EVP_CIPHER_CTX_free(ctx);
+
+  return ciphertext_len;
+}
+
+int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
+  unsigned char *iv, unsigned char *plaintext)
+{
+  EVP_CIPHER_CTX *ctx;
+
+  int len;
+
+  int plaintext_len;
+
+  /* Create and initialise the context */
+  if(!(ctx = EVP_CIPHER_CTX_new())) handleErrors();
+
+  /* Initialise the decryption operation. IMPORTANT - ensure you use a key
+   * and IV size appropriate for your cipher
+   * In this example we are using DES in CBC Mode (i.e. a 64 bit key). The
+   * IV size for *most* modes is the same as the block size. 
+   */
+  if(1 != EVP_DecryptInit_ex(ctx, EVP_des_cbc(), NULL, key, iv))
+    handleErrors();
+
+  /* Provide the message to be decrypted, and obtain the plaintext output.
+   * EVP_DecryptUpdate can be called multiple times if necessary
+   */
+  if(1 != EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
+    handleErrors();
+  plaintext_len = len;
+
+  /* Finalise the decryption. Further plaintext bytes may be written at
+   * this stage.
+   */
+  if(1 != EVP_DecryptFinal_ex(ctx, plaintext + len, &len)) handleErrors();
+  plaintext_len += len;
+
+  /* Clean up */
+  EVP_CIPHER_CTX_free(ctx);
+
+  return plaintext_len;
+}
+
+void handleErrors(void)
+{
+  ERR_print_errors_fp(stderr);
+  abort();
+}
