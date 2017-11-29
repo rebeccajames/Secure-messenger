@@ -16,6 +16,7 @@
 #include <cstdlib>						//C standard general utilities library
 #include <cstring>						//C string class for string objects
 #include <stdio.h>						//fgets 
+#include <chrono>						//timer
 #include <unistd.h>						//Read, Write, Close functions	
 #include <netdb.h>						//IP address, hostent structures			
 #include <sys/types.h> 					//for porting socket programs
@@ -23,12 +24,14 @@
 #include <netinet/in.h>					//byte order conversion functions
 										//data structures defined by internet
 										
-#include <stdlib.h>
-#include <memory.h>
-#include <errno.h>
-#include <fstream>
+#include <signal.h>						//Ctrl-C
+#include <stdio.h>						//C library for IO	
+#include <stdlib.h>						//C library general utilities
+#include <memory.h>						//dynamic memory
+#include <errno.h>						//system error numbers
 
-#include <openssl/crypto.h>
+
+#include <openssl/crypto.h>				//openssl libraries
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
@@ -43,7 +46,6 @@
 
 
 #define BUFFER_SZ 128					//I/O Buffer size max text length
-//#define CIPHERTXT_SZ 512
 #define MAX_CLIENTS 100					//Maximum number of client connections
 
 using namespace std;
@@ -80,19 +82,16 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	int decryptedtext_len, ciphertext_len;	//lengths for decrypted plaintext and ciphertext
 	int buf_len;							//length for buffer that is read
 	//FILE* fp = fopen("dh256.pem", "r");
-	DH* dh = DH_new();
+	DH* dh = DH_new();						//DH struct:  p, g, priv key, pub key
       
-	//256 bit key :  THIS WILL HAVE TO BE RANDOMLY GENERATED
-	unsigned char *key;// = (unsigned char*) malloc(DH_size(dh));
-	//memset(key, 0, DH_size(dh));
-	  // (unsigned char *)"01234567890123456789012345678901";
+	//256 bit key :  DH assigns this value
+	unsigned char *key;
 
 	//128 bit KEY :  THIS WILL HAVE TO BE RANDOMLY GENERATED
 	unsigned char *iv = (unsigned char *)"0123456789012345";
 
 	//Message to be encrypted
 	unsigned char *plaintext;
-// = (unsigned char *)"The quick brown fox jumps over the lazy dog";
 
 	/* Buffer for ciphertext. Ensure the buffer is long enough for the
 	* ciphertext which may be longer than the plaintext, dependant on the
@@ -163,23 +162,20 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	if ((valuerd = read(sd, convertBn, len)) <= 0)
 	  {
 	    cerr << "ERROR: Failed to read p from server socket\n";
-
 	  }
 	
 	
 	dh->p = BN_bin2bn(convertBn, len, NULL);
 	char * check = BN_bn2dec(dh->p);
 	cout<<"p = "<< check << endl;
-
-	 convertBn = new unsigned char;
+	
+	convertBn = new unsigned char;
 
 	valuerd = read(sd, &len, sizeof(len));	//try to read what is in buffer	
 	if ((valuerd = read(sd, convertBn, len)) <= 0)
 	  {
-	   cerr << "ERROR: Failed to read g from server socket\n";
-
+	     cerr << "ERROR: Failed to read g from server socket\n";
 	  }
-	
 	
 	dh->g = BN_bin2bn(convertBn, len, NULL);
 	check = BN_bn2dec(dh->g);
@@ -190,14 +186,13 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	  {
 	    /* Problems have been found with the generated parameters */
 	    printf("DH_check failed\n");
-	  
 	  }
 
 	if (1 != DH_generate_key(dh))  //generates the client's public key g^a mod p, g^b mod p
-	  {
+	{
 	    cerr <<"error setting pub key"<<endl;
 	    //exit(1);
-	      }
+	}
 	
 	len = BN_num_bytes(dh->pub_key);
 	convertBn = new unsigned char;
@@ -209,44 +204,9 @@ int main(int argc, char* argv[])			//main takes command line arguments
 	check = BN_bn2dec(dh->pub_key);
 	cout<<"pub key "<<check<<endl;
 	
-	/*if ((send(sd, &len, sizeof(len), 0)) < 0)
-	  {
-
-	    cerr<<"failed to send length of pubkey"<<endl;
-	    exit(1);
-	  }
-	
-	if ((send(sd, convertBn, len, 0)) < 0) 
-	  {
-	    cerr<<"failed to send pubkey"<<endl;
-	    exit(1);
-
-	  }
-	
-	valuerd = read(sd, &len, sizeof(len));	//try to read what is in buffer	
-	if ((valuerd = read(sd, convertBn, len)) <= 0)
-	  {
-	    	       cerr << "ERROR: Failed to read g from server socket\n";
-
-	  }
-	
-	key =  (unsigned char*) malloc(DH_size(dh));
-	memset(key, 0, DH_size(dh));
-	BIGNUM * pub_key2 = BN_new();
-	BN_bin2bn(convertBn, len, pub_key2);
-	check = BN_bn2dec(pub_key2);
-	cout<<"pubkey2 = "<<check<<endl;
-	DH_compute_key(key, pub_key2, dh); //computes shared key  
-	
-	cout<<"priv shared key = "<<key<<endl;
-	
-	*/
 	bool SharedKeyISCalculated = false;
 
 	/************************************************************/
-
-
-
 
 	while (1)	//while client is running
 	{
@@ -262,9 +222,9 @@ int main(int argc, char* argv[])			//main takes command line arguments
 		
 		//check if there is anything to write 
 		if (FD_ISSET(STDIN_FILENO, &masterfds))
-		{
-		  
-		  if ( !SharedKeyISCalculated){
+		{		  
+		  if ( !SharedKeyISCalculated)
+		  {
 		
 		    len = BN_num_bytes(dh->pub_key);
 		    convertBn = new unsigned char;
@@ -278,16 +238,15 @@ int main(int argc, char* argv[])			//main takes command line arguments
 		    
 		    if ((send(sd, convertBn, len, 0)) < 0) 
 		      {
-			cerr<<"failed to send pubkey"<<endl;
-			exit(1);
-			
+				cerr<<"failed to send pubkey"<<endl;
+				exit(1);
 		      }
 		    
 		    if ((valuerd = read(sd, convertBn, len)) <= 0)
-		      {
-	    	       cerr << "ERROR: Failed to read g from server socket\n";
+		    {
+	    	    cerr << "ERROR: Failed to read g from server socket\n";
 
-		      }
+		    }
 		    
 		    key =  (unsigned char*) malloc(DH_size(dh));
 		    memset(key, 0, DH_size(dh));
@@ -295,27 +254,32 @@ int main(int argc, char* argv[])			//main takes command line arguments
 		    BN_bin2bn(convertBn, len, pub_key2);
 		    check = BN_bn2dec(pub_key2);
 		    cout<<"pubkey2 = "<<check<<endl;
+			
+			auto t1 = chrono::high_resolution_clock::now();	
 		    DH_compute_key(key, pub_key2, dh); //computes shared key  
+			auto t2 = chrono::high_resolution_clock::now();
+			chrono::duration<int64_t,nano> elapsed = t2 - t1; 
+			cout << "\nDH Shared Private Key Creation Runtime is: " << elapsed.count() << " nanoseconds.\n";
 	
 		    cout<<"priv shared key = "<<key<<endl;
 	
-
 		    SharedKeyISCalculated = true;
-
-			  }
-
-
-
-		    
-		    	bzero(buf, 256);	//clear the buffer
+		  }
+		  
+		    bzero(buf, 256);	//clear the buffer
 			fgets(buf, 255, stdin);		//get the input and write it
 			
-			printf("inside FD_ISSET ready to write\n");
+			//printf("inside FD_ISSET ready to write\n");
 			//Message to be encrypted
 			plaintext = (unsigned char *)buf; //(unsigned char *)"The quick brown fox jumps over the lazy dog";
                
-			/* Encrypt the plaintext */
+			// Encrypt the plaintext and time it
+			auto t1 = chrono::high_resolution_clock::now();
 			ciphertext_len = encrypt (plaintext, strlen ((char *)plaintext), key, iv, ciphertext);
+			auto t2 = chrono::high_resolution_clock::now();
+			chrono::duration<int64_t,nano> elapsed = t2 - t1; 
+			cout << "\nAES Encryption Runtime is: " << elapsed.count() << " nanoseconds.\n";
+
 							
 			printf("Ciphertext is:\n");
 			BIO_dump_fp (stdout, (const char *)ciphertext, ciphertext_len);
@@ -327,44 +291,37 @@ int main(int argc, char* argv[])			//main takes command line arguments
 				close(STDIN_FILENO);
 				FD_CLR(STDIN_FILENO, &masterfds);
 			}	
-		
-
-
-
-
-		  
-
-		  
-
-
 		}
 		bzero(buf, BUFFER_SZ);	//clear the buffer before read
 		
 		//check if there is anything to read
 		if (FD_ISSET(sd, &masterfds)) 
 		{
-
-		  if  (!SharedKeyISCalculated){
-			
-
+		  if  (!SharedKeyISCalculated)
+		  {
 		    if ((valuerd = read(sd, convertBn, len)) <= 0)
 		      {
-	    	       cerr << "ERROR: Failed to read g from server socket\n";
+	    	    cerr << "ERROR: Failed to read g from server socket\n";
 
 		      }
 	
-
 		    key =  (unsigned char*) malloc(DH_size(dh));
 		    memset(key, 0, DH_size(dh));
 		    BIGNUM * pub_key2 = BN_new();
 		    BN_bin2bn(convertBn, len, pub_key2);
 		    check = BN_bn2dec(pub_key2);
 		    cout<<"pubkey2 = "<<check<<endl;
+			
+			
+			auto t1 = chrono::high_resolution_clock::now();	
 		    DH_compute_key(key, pub_key2, dh); //computes shared key  
+			auto t2 = chrono::high_resolution_clock::now();
+			chrono::duration<int64_t,nano> elapsed = t2 - t1; 
+			cout << "\nDH Shared Private Key Creation Runtime is: " << elapsed.count() << " nanoseconds.\n";
+		    //DH_compute_key(key, pub_key2, dh); //computes shared key  
 	
 		    cout<<"priv shared key = "<<key<<endl;
-	
-		    	
+		
 		    len = BN_num_bytes(dh->pub_key);
 		    convertBn = new unsigned char;
 		    len = BN_bn2bin(dh->pub_key, convertBn);
@@ -375,26 +332,17 @@ int main(int argc, char* argv[])			//main takes command line arguments
 		    check = BN_bn2dec(dh->pub_key);
 		    cout<<"pub key "<<check<<endl;
 	
-	
 		    if ((send(sd, convertBn, len, 0)) < 0) 
 		      {
-			cerr<<"failed to send pubkey"<<endl;
-			exit(1);
+				cerr<<"failed to send pubkey"<<endl;
+				exit(1);
 
 		      }
-
-
-
-
-
-
-
-
 		    SharedKeyISCalculated = true;
-
+			
 		  }
 
-printf("inside FD_ISSET ready to read\n");
+			//printf("inside FD_ISSET ready to read\n");
 			valuerd = read(sd, buf, 255);	//try to read what is in buffer	
 			if ((valuerd < 0) || (valuerd == 0)) //if error or server is closed.
 			{
@@ -406,23 +354,25 @@ printf("inside FD_ISSET ready to read\n");
 			{
 				int buf_len = size(&buf[0]);
 				CharToUnsignedChar(buf, ciphertext, buf_len); 
-				printf("inside FD_ISSET ready to read BEFORE make call to decrypt\n");
+				printf("Ciphertext is:\n");
+				printf("%s\n", buf);
+				//printf("inside FD_ISSET ready to read BEFORE make call to decrypt\n");
+				auto t1 = chrono::high_resolution_clock::now();
 				decryptedtext_len = decrypt (ciphertext, /*ciphertext_len*/buf_len, key, iv, decryptedtext);
-				printf("inside FD_ISSET ready to read AFTER make call to decrypt\n");
-				/* Add a NULL terminator. We are expecting printable text */
+				auto t2 = chrono::high_resolution_clock::now();
+				chrono::duration<int64_t,nano> elapsed = t2 - t1; 
+				cout << "AES Decryption Runtime is: " << elapsed.count() << " nanoseconds.\n";
+				
+				//printf("inside FD_ISSET ready to read AFTER make call to decrypt\n");
+				//Add a NULL terminator. We are expecting printable text
 				decryptedtext[decryptedtext_len] = '\0';
 
-				/* Show the decrypted text */
+				//Show the decrypted text
 				printf("Decrypted text is:\n");
 				printf("%s\n", decryptedtext);
 
-				//cout << "\n" << buf << endl;
 				bzero(buf, BUFFER_SZ);
 			}
-		
-
-
-
 		}
 	}
 	return 0;	//Exit Main
@@ -501,7 +451,7 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
   if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) handleErrors();
   ciphertext_len += len;
 
-  /* Clean up */
+  //Clean up 
   EVP_CIPHER_CTX_free(ctx);
 
   return ciphertext_len;
@@ -516,7 +466,7 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
 
   int plaintext_len;
 
-  /* Create and initialise the context */
+  // Create and initialise the context
   if(!(ctx = EVP_CIPHER_CTX_new())) handleErrors();
 
   /* Initialise the decryption operation. IMPORTANT - ensure you use a key
@@ -540,7 +490,7 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
   if(1 != EVP_DecryptFinal_ex(ctx, plaintext + len, &len)) handleErrors();
   plaintext_len += len;
 
-  /* Clean up */
+  //Clean up 
   EVP_CIPHER_CTX_free(ctx);
 
   return plaintext_len;
@@ -551,4 +501,3 @@ void handleErrors(void)
   ERR_print_errors_fp(stderr);
   abort();
 }
-
